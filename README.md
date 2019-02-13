@@ -1,3 +1,7 @@
+# Object Detection Modules for PyTorch
+
+SoftmaxTree is a tree of softmax groups (i.e. the softmax axis is jagged)
+NMSFilter applies Non Maximal Suppression on a batch of confidence values and bouding boxes
 
 # Contributing
 
