@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Function
 
-from mtorch.simple_parser import read_softmax_tree
+from mictorch.simple_parser import read_softmax_tree
 
 import smt_cuda
 import smt_cpu

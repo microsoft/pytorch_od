@@ -17,7 +17,7 @@ if op.dirname(this_file):
     os.chdir(op.dirname(this_file))
 script_dir = os.getcwd()
 
-include_dirs = [op.abspath('./mtorch/common/')]
+include_dirs = [op.abspath('./mictorch/common/')]
 
 
 def readme(fname):
@@ -27,7 +27,7 @@ def readme(fname):
 
 
 setup(
-    name="mtorch",
+    name="mictorch",
     version="0.0.1",
     author="ehazar",
     author_email="ehazar@microsoft.com",
@@ -37,25 +37,25 @@ setup(
     packages=find_packages(),
     ext_modules=[
         CUDAExtension('smt_cuda', [
-            'mtorch/smt/smt_cuda.cpp',
-            'mtorch/smt/smt_cuda_kernel.cu',
+            'mictorch/smt/smt_cuda.cpp',
+            'mictorch/smt/smt_cuda_kernel.cu',
         ], include_dirs=include_dirs),
         CppExtension('smt_cpu', [
-            'mtorch/smt/smt_cpu.cpp',
+            'mictorch/smt/smt_cpu.cpp',
         ], include_dirs=include_dirs),
         CUDAExtension('nmsfilt_cuda', [
-            'mtorch/nmsfilt/nmsfilt_cuda.cpp',
-            'mtorch/nmsfilt/nmsfilt_cuda_kernel.cu',
+            'mictorch/nmsfilt/nmsfilt_cuda.cpp',
+            'mictorch/nmsfilt/nmsfilt_cuda_kernel.cu',
         ], include_dirs=include_dirs),
         CppExtension('nmsfilt_cpu', [
-            'mtorch/nmsfilt/nmsfilt_cpu.cpp',
+            'mictorch/nmsfilt/nmsfilt_cpu.cpp',
         ], include_dirs=include_dirs),
         CUDAExtension('smtpred_cuda', [
-            'mtorch/smtpred/smtpred_cuda.cpp',
-            'mtorch/smtpred/smtpred_cuda_kernel.cu',
+            'mictorch/smtpred/smtpred_cuda.cpp',
+            'mictorch/smtpred/smtpred_cuda_kernel.cu',
         ], include_dirs=include_dirs),
         CppExtension('smtpred_cpu', [
-            'mtorch/smtpred/smtpred_cpu.cpp',
+            'mictorch/smtpred/smtpred_cpu.cpp',
         ], include_dirs=include_dirs),
 
     ],
