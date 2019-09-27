@@ -5,7 +5,12 @@ import os
 import sys
 import os.path as op
 from setuptools import find_packages, setup
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension, CppExtension
+from torch.utils.cpp_extension import BuildExtension, CppExtension
+try:
+    from torch.utils.cpp_extension import CUDAExtension
+except (ImportError, OSError) as e:
+    CUDAExtension = None
+    print("No CUDA was detected, building without CUDA error: {}".format(e))
 
 # change directory to this module path
 try:
@@ -26,6 +31,24 @@ def readme(fname):
     return open(op.join(script_dir, fname)).read()
 
 
+if CUDAExtension is None:
+    cuda_extensions = []
+else:
+    cuda_extensions = [
+        CUDAExtension('smt_cuda', [
+            'mictorch/smt/smt_cuda.cpp',
+            'mictorch/smt/smt_cuda_kernel.cu',
+        ], include_dirs=include_dirs),
+        CUDAExtension('smtpred_cuda', [
+            'mictorch/smtpred/smtpred_cuda.cpp',
+            'mictorch/smtpred/smtpred_cuda_kernel.cu',
+        ], include_dirs=include_dirs),
+        CUDAExtension('nmsfilt_cuda', [
+            'mictorch/nmsfilt/nmsfilt_cuda.cpp',
+            'mictorch/nmsfilt/nmsfilt_cuda_kernel.cu',
+        ], include_dirs=include_dirs),
+    ]
+
 setup(
     name="mictorch",
     version="0.0.1",
@@ -36,29 +59,17 @@ setup(
     long_description=readme('README.md'),
     packages=find_packages(),
     ext_modules=[
-        CUDAExtension('smt_cuda', [
-            'mictorch/smt/smt_cuda.cpp',
-            'mictorch/smt/smt_cuda_kernel.cu',
-        ], include_dirs=include_dirs),
         CppExtension('smt_cpu', [
             'mictorch/smt/smt_cpu.cpp',
         ], include_dirs=include_dirs),
-        CUDAExtension('nmsfilt_cuda', [
-            'mictorch/nmsfilt/nmsfilt_cuda.cpp',
-            'mictorch/nmsfilt/nmsfilt_cuda_kernel.cu',
-        ], include_dirs=include_dirs),
         CppExtension('nmsfilt_cpu', [
             'mictorch/nmsfilt/nmsfilt_cpu.cpp',
-        ], include_dirs=include_dirs),
-        CUDAExtension('smtpred_cuda', [
-            'mictorch/smtpred/smtpred_cuda.cpp',
-            'mictorch/smtpred/smtpred_cuda_kernel.cu',
         ], include_dirs=include_dirs),
         CppExtension('smtpred_cpu', [
             'mictorch/smtpred/smtpred_cpu.cpp',
         ], include_dirs=include_dirs),
 
-    ],
+    ]  + cuda_extensions,
     cmdclass={
         'build_ext': BuildExtension
     },
