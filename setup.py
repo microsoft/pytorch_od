@@ -68,7 +68,9 @@ setup(
         CppExtension('smtpred_cpu', [
             'mictorch/smtpred/smtpred_cpu.cpp',
         ], include_dirs=include_dirs),
-
+        CppExtension('nms_cpu', [
+            'mictorch/nms/nms_cpu.cpp',
+        ], include_dirs=include_dirs),
     ]  + cuda_extensions,
     cmdclass={
         'build_ext': BuildExtension
