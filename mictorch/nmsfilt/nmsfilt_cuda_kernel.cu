@@ -13,7 +13,7 @@
 namespace {
 
 template <typename scalar_t>
-__device__ void bottom_up_argmerge(const scalar_t* p,
+__device__ void bottom_up_argmerge(const scalar_t* __restrict__ p,
                                    int left, int right, int end,
                                    const int* __restrict__ src, int* __restrict__ dst) {
     int i = left;
@@ -77,7 +77,7 @@ __global__ void kernel_pre_filter(
 
 template <typename scalar_t>
 __global__ void kernel_nms_filter(
-    int outer_num, int channels, int inner_num, int classes, int first_class,
+    int outer_num, int channels, int inner_num, int classes, int first_class, int max_output_boxes,
     const int* __restrict__ idx,
     const scalar_t* __restrict__ bbs_data, float thresh,
     scalar_t* __restrict__ top_conf_data) {
@@ -88,10 +88,17 @@ __global__ void kernel_nms_filter(
         const int dim = (n * channels + c) * inner_num;
         const int idx_dim = (n * classes + c_idx) * inner_num;
         const int* src_idx = idx + idx_dim;
+        int non_zero_count = 0;
         for (int i_idx = 0; i_idx < inner_num; ++i_idx) {
             int i = src_idx[i_idx];
             if (top_conf_data[dim + i] == 0)
                 continue;
+            if (non_zero_count == max_output_boxes) {
+                // zero out the rest
+                top_conf_data[dim + i] = 0;
+                continue;
+            }
+            ++non_zero_count;
             auto i_bb = bbs_data + (n * inner_num + i) * 4;
             for (int j_idx = i_idx + 1; j_idx < inner_num; ++j_idx) {
                 int j = src_idx[j_idx];
@@ -112,13 +119,13 @@ __global__ void kernel_nms_filter(
 
 std::vector<at::Tensor> nmsfilt_cuda_forward(
     at::Tensor bbs, at::Tensor conf,
-    float nms_threshold, int classes, float pre_threshold, int first_class,
+    float nms_threshold, int classes, float pre_threshold, int first_class, int max_output_boxes,
     int outer_num, int channels, int inner_num) {
 
   auto top_conf = conf.clone();
 
   if (pre_threshold >= 0) {
-    AT_DISPATCH_FLOATING_TYPES(conf.type(), "nmsfilt_cuda_forward::kernel_pre_filter", ([&] {
+    AT_DISPATCH_FLOATING_TYPES(conf.scalar_type(), "nmsfilt_cuda_forward::kernel_pre_filter", ([&] {
       kernel_pre_filter<scalar_t><<<GET_BLOCKS(outer_num * classes * inner_num), CUDA_NUM_THREADS>>>(
           outer_num, channels, inner_num, classes, first_class,
           pre_threshold,
@@ -130,16 +137,16 @@ std::vector<at::Tensor> nmsfilt_cuda_forward(
     return {top_conf};
 
   // intermediate variables
-  auto idx = at::empty({outer_num, classes, inner_num}, at::CUDA(at::kInt));
+  auto idx = at::empty({outer_num, classes, inner_num}, bbs.options().dtype(at::kInt));
   int* idx_data = idx.data<int>();
 
   {
     // This memory is safe to release after sorting but we keep it in GPU memory,
-    auto idx_swp = at::empty({outer_num, classes, inner_num}, at::CUDA(at::kInt));
+    auto idx_swp = at::empty_like(idx);
     int* idx_tmp = idx_swp.data<int>();
     // Start swapped if loop runs for an odd number
     bool is_swapped = ((int)ceil(log2((double)inner_num))) % 2 != 0;
-    AT_DISPATCH_FLOATING_TYPES(conf.type(), "nmsfilt_cuda_forward::kernel_channel_argmergesort", ([&] {
+    AT_DISPATCH_FLOATING_TYPES(conf.scalar_type(), "nmsfilt_cuda_forward::kernel_channel_argmergesort", ([&] {
       for (int width = 2; width < inner_num * 2; width *= 2) {
         int chunks = (inner_num + width - 1) / width;
         int* src_idx = is_swapped ? idx_tmp : idx_data;
@@ -154,9 +161,9 @@ std::vector<at::Tensor> nmsfilt_cuda_forward(
     }));
   }
 
-  AT_DISPATCH_FLOATING_TYPES(conf.type(), "nmsfilt_cuda_forward::kernel_nms_filter", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(conf.scalar_type(), "nmsfilt_cuda_forward::kernel_nms_filter", ([&] {
     kernel_nms_filter <<<GET_BLOCKS(outer_num * classes), CUDA_NUM_THREADS >>>(
-        outer_num, channels, inner_num, classes, first_class,
+        outer_num, channels, inner_num, classes, first_class, max_output_boxes,
         idx.data<int>(),
         bbs.data<scalar_t>(), nms_threshold,
         top_conf.data<scalar_t>()

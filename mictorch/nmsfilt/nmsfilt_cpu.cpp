@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-#include <torch/torch.h>
+#include <torch/extension.h>
+#include <torch/script.h>
 
 #include <vector>
 #include <numeric>
@@ -13,7 +14,7 @@ namespace {
 
 // sort the values in p in descending order and keep the index in result
 template <typename scalar_t>
-void sort_nms_idx(const scalar_t* __restrict__ p,
+void sort_nms_idx(const scalar_t* p,
                   std::vector<int>& result) {
     std::iota(result.begin(), result.end(), 0);
     std::sort(result.begin(), result.end(),
@@ -24,7 +25,7 @@ void sort_nms_idx(const scalar_t* __restrict__ p,
 template <typename scalar_t>
 void pre_filter(int outer_num, int channels, int inner_num, int classes, int first_class,
                 float thresh,
-                scalar_t* __restrict__ top_conf_data) {
+                scalar_t* RESTRICT top_conf_data) {
     for (int index = 0; index < outer_num * classes * inner_num; ++index) {
         const int s = index % inner_num;
         const int c = (index / inner_num) % classes + first_class;
@@ -36,10 +37,10 @@ void pre_filter(int outer_num, int channels, int inner_num, int classes, int fir
 }
 
 template <typename scalar_t>
-void nms_filter(const scalar_t* __restrict__ bbs_data,
-                int outer_num, int channels, int inner_num, int classes, int first_class,
+void nms_filter(const scalar_t* RESTRICT bbs_data,
+                int outer_num, int channels, int inner_num, int classes, int first_class, int max_output_boxes,
                 float thresh,
-                scalar_t* __restrict__ top_conf_data) {
+                scalar_t* RESTRICT top_conf_data) {
 
     for (int index = 0; index < outer_num * classes; ++index) {
         int c = index % classes + first_class;
@@ -48,12 +49,19 @@ void nms_filter(const scalar_t* __restrict__ bbs_data,
         const int dim = (n * channels + c) * inner_num;
         std::vector<int> idx(inner_num);
         sort_nms_idx<scalar_t>(top_conf_data + dim, idx);
+        int non_zero_count = 0;
 
         // TODO: profile the performance and try vectorizing with BLAS (or at::)
         for (int i_idx = 0; i_idx < inner_num; ++i_idx) {
             int i = idx[i_idx];
             if (top_conf_data[dim + i] == 0)
                 continue;
+            if (non_zero_count == max_output_boxes) {
+                // zero out the rest
+                top_conf_data[dim + i] = 0;
+                continue;
+            }
+            ++non_zero_count;
             auto i_bb = bbs_data + (n * inner_num + i) * 4;
             for (int j_idx = i_idx + 1; j_idx < inner_num; ++j_idx) {
                 int j = idx[j_idx];
@@ -74,7 +82,7 @@ void nms_filter(const scalar_t* __restrict__ bbs_data,
 // C++ interface
 std::vector<at::Tensor> nmsfilt_forward(
     at::Tensor bbs, at::Tensor conf,
-    float nms_threshold, int classes, float pre_threshold, int first_class) {
+    float nms_threshold, int classes, float pre_threshold, int first_class, int max_output_boxes) {
   CHECK_INPUT_CPU(bbs);
   CHECK_INPUT_CPU(conf);
 
@@ -103,7 +111,7 @@ std::vector<at::Tensor> nmsfilt_forward(
   auto top_conf = conf.clone();
 
   if (pre_threshold >= 0) {
-    AT_DISPATCH_FLOATING_TYPES(conf.type(), "nmsfilt_forward::pre_filter", ([&] {
+    AT_DISPATCH_FLOATING_TYPES(conf.scalar_type(), "nmsfilt_forward::pre_filter", ([&] {
       pre_filter(outer_num, channels, inner_num, classes, first_class,
                  pre_threshold,
                  top_conf.data<scalar_t>());
@@ -113,9 +121,9 @@ std::vector<at::Tensor> nmsfilt_forward(
   if (nms_threshold <= 0 || inner_num == 1)
       return {top_conf};
 
-  AT_DISPATCH_FLOATING_TYPES(conf.type(), "nmsfilt_forward::nms_filter", ([&] {
+  AT_DISPATCH_FLOATING_TYPES(conf.scalar_type(), "nmsfilt_forward::nms_filter", ([&] {
     nms_filter(bbs.data<scalar_t>(),
-               outer_num, channels, inner_num, classes, first_class,
+               outer_num, channels, inner_num, classes, first_class, max_output_boxes,
                nms_threshold,
                top_conf.data<scalar_t>());
   }));
@@ -126,3 +134,14 @@ std::vector<at::Tensor> nmsfilt_forward(
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("forward", &nmsfilt_forward, "NMSFilter forward (CPU)");
 }
+
+at::Tensor nmsfilt(
+    at::Tensor bbs, at::Tensor conf,
+    const double nms_threshold, const double pre_threshold, const int64_t max_output_boxes) {
+    return nmsfilt_forward(bbs, conf, nms_threshold, 1, pre_threshold, 0, max_output_boxes)[0];
+}
+
+static auto registry = torch::jit::RegisterOperators()
+  .op("mtorch_ops::nmsfilt(Tensor bbs, Tensor conf,"
+      "float nms_threshold, float pre_threshold, int max_output_boxes) -> Tensor",
+      &nmsfilt);
