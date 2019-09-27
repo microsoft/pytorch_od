@@ -19,4 +19,9 @@
 #define CHECK_CPU(x) AT_ASSERTM(!x.type().is_cuda(), #x " must be a CPU tensor")
 #define CHECK_INPUT_CPU(x) CHECK_CPU(x); CHECK_CONTIGUOUS(x)
 
+#ifdef MSVC
+    #define RESTRICT __restrict
+#else
+    #define RESTRICT __restrict__
+#endif
 #endif  // MTORCH_COMMON_HPP_

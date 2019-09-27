@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-#include <torch/torch.h>
+#include <torch/extension.h>
 
 #include <vector>
 
@@ -11,13 +11,13 @@
 
 std::vector<at::Tensor> nmsfilt_cuda_forward(
     at::Tensor bbs, at::Tensor conf,
-    float nms_threshold, int classes, float pre_threshold, int first_class,
+    float nms_threshold, int classes, float pre_threshold, int first_class, int max_output_boxes,
     int outer_num, int channels, int inner_num);
 
 // C++ interface
 std::vector<at::Tensor> nmsfilt_forward(
     at::Tensor bbs, at::Tensor conf,
-    float nms_threshold, int classes, float pre_threshold, int first_class) {
+    float nms_threshold, int classes, float pre_threshold, int first_class, int max_output_boxes) {
   CHECK_INPUT(bbs);
   CHECK_INPUT(conf);
 
@@ -45,7 +45,7 @@ std::vector<at::Tensor> nmsfilt_forward(
 
   return nmsfilt_cuda_forward(
       bbs, conf,
-      nms_threshold, classes, pre_threshold, first_class,
+      nms_threshold, classes, pre_threshold, first_class, max_output_boxes,
       outer_num, channels, inner_num);
 }
 
