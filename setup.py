@@ -8,7 +8,9 @@ from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CppExtension
 try:
     from torch.utils.cpp_extension import CUDAExtension
-except (ImportError, OSError) as e:
+    import torch
+    assert torch.cuda.is_available(), "No CUDA found"
+except (ImportError, OSError, AssertionError) as e:
     CUDAExtension = None
     print("No CUDA was detected, building without CUDA error: {}".format(e))
 
