@@ -1,3 +1,8 @@
+# -------------------------------------------------------------------------
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+# --------------------------------------------------------------------------
+
 import torch
 
 
@@ -82,17 +87,17 @@ def resize_bilinear(im,
     else:
         itx1 = tx.ceil()
 
+    dy = ty - ity0
+    dx = tx - itx0
     if axis == 0:
-        dy = (ty - ity0).view(-1, 1, 1)
-        dx = (tx - itx0).view(-1, 1)
-        del ty, tx
-        dydx = dy * dx
+        dy = dy.view(-1, 1, 1)
+        dx = dx.view(-1, 1)
     else:
-        assert axis == 2
-        dy = (ty - ity0).view(-1, 1)
-        dx = (tx - itx0).view(-1)
-        del ty, tx
-        dydx = dy * dx
+        assert axis == 2, "Only 1xCxHxW and HxWxC inputs supported"
+        dy = dy.view(-1, 1)
+        dx = dx.view(-1)
+    del ty, tx
+    dydx = dy * dx
 
     # noinspection PyProtectedMember
     if torch._C._get_tracing_state():
