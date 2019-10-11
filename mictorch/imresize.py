@@ -6,6 +6,16 @@
 import torch
 
 
+@torch.jit.script
+def _dynsize_helper(crop_height_i, crop_width_i):
+    """The input shape could be dynamic
+    This will be exported as .ones().nonzero() with proper params
+    """
+    y = torch.arange(crop_height_i, dtype=torch.float32)
+    x = torch.arange(crop_width_i, dtype=torch.float32)
+    return y, x
+
+
 def resize_bilinear(im,
                     resized_shape=None, output_crop_shape=None,
                     darknet=False, edge=True, axis=2):
@@ -30,28 +40,36 @@ def resize_bilinear(im,
         input_height, input_width = torch.tensor(input_height), torch.tensor(input_width)
     input_height, input_width = input_height.float(), input_width.float()
 
+    assert resized_shape is not None, "No dimension given to resize"
     target_height, target_width = resized_shape
     if not isinstance(target_height, torch.Tensor):
         target_height, target_width = torch.tensor(target_height), torch.tensor(target_width)
+    resized_shape_i = target_height, target_width
     target_height, target_width = target_height.float(), target_width.float()
     resized_shape = target_height, target_width
 
     top = left = None
     if output_crop_shape is None:
-        assert resized_shape is not None, "No dimension given to resize"
-        output_crop_shape = resized_shape
+        crop_height_i, crop_width_i = resized_shape_i
+        crop_height, crop_width = resized_shape
         top = 0
         left = 0
+    else:
+        crop_height_i, crop_width_i = output_crop_shape
+        if not isinstance(crop_height_i, torch.Tensor):
+            crop_height_i, crop_width_i = torch.tensor(crop_height_i), torch.tensor(crop_width_i)
+        crop_height, crop_width = crop_height_i, crop_width_i
 
-    crop_height, crop_width = output_crop_shape
-    if not isinstance(crop_height, torch.Tensor):
-        crop_height, crop_width = torch.tensor(crop_height), torch.tensor(crop_width)
+    if not crop_height.dtype.is_floating_point:
+        crop_height, crop_width = crop_height.float(), crop_width.float()
 
-    y = torch.arange(crop_height, device=im.device)
-    x = torch.arange(crop_width, device=im.device)
+    # TODO: ONNX does not like float in arange, can avoid .long() once issue #27718 is fixed in release
+    if crop_height_i.dtype.is_floating_point:
+        crop_height_i, crop_width_i = crop_height_i.long(), crop_width_i.long()
 
-    if not x.dtype.is_floating_point:
-        x, y = x.float(), y.float()
+    # TODO: Use normal arange once issue #20075 is fixed in release
+    y, x = _dynsize_helper(crop_height_i, crop_width_i)
+    y, x = y.to(im.device), x.to(im.device)
 
     if top is None:
         assert left is None
@@ -89,6 +107,7 @@ def resize_bilinear(im,
 
     dy = ty - ity0
     dx = tx - itx0
+    del ty, tx
     if axis == 0:
         dy = dy.view(-1, 1, 1)
         dx = dx.view(-1, 1)
@@ -96,7 +115,6 @@ def resize_bilinear(im,
         assert axis == 2, "Only 1xCxHxW and HxWxC inputs supported"
         dy = dy.view(-1, 1)
         dx = dx.view(-1)
-    del ty, tx
     dydx = dy * dx
 
     # noinspection PyProtectedMember
