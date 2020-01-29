@@ -111,7 +111,7 @@ at::Tensor nms(
     return nms_cpu_forward(bbs, conf, nms_threshold, max_output_boxes);
 }
 
-static auto registry = torch::jit::RegisterOperators()
+static auto registry = torch::RegisterOperators()
   .op("mtorch_ops::nms(Tensor bbs, Tensor conf,"
       "float nms_threshold, int max_output_boxes) -> Tensor",
       &nms);
