@@ -141,7 +141,7 @@ at::Tensor nmsfilt(
     return nmsfilt_forward(bbs, conf, nms_threshold, 1, pre_threshold, 0, max_output_boxes)[0];
 }
 
-static auto registry = torch::jit::RegisterOperators()
+static auto registry = torch::RegisterOperators()
   .op("mtorch_ops::nmsfilt(Tensor bbs, Tensor conf,"
       "float nms_threshold, float pre_threshold, int max_output_boxes) -> Tensor",
       &nmsfilt);
